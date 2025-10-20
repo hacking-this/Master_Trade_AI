@@ -1,0 +1,32 @@
+name: MLOps Pipeline CI/CD
+
+# Trigger this workflow on every push to the main branch
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # 1. Continuous Integration (CI): Test Code Quality and Dependencies
+  ci_check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.9'
+          
+      - name: Install dependencies for testing
+        # Installs packages needed to test scripts inside the GitHub Runner environment
+        run: pip install -r requirements.txt flake8
+        
+      - name: Run Code Linter (Static Analysis)
+        # Checks for syntax errors and stylistic problems
+        run: flake8 scripts/ frontend/
+        
+      - name: Build Custom Airflow Image Test
+        # This checks that the Dockerfile can still build successfully with all the secrets/keys
+        run: docker build -t master-trader-airflow:test . 
+
+      # NOTE: We skip deployment here, as actual deployment is done using the 'docker compose' command manually
