@@ -2,123 +2,131 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score
+from sklearn.model_selection import train_test_split
 import joblib 
-# --- Imports for the directory fix ---
 import os 
 from pathlib import Path 
-import numpy as np
 
 # --- 1. CONFIGURATION ---
-DATABASE_URL = "postgresql://user:password@ai_stock_project-db-1:5432/stock_market_db"
+DATABASE_URL = "postgresql://user:password@ai_stock_project-db-1:5432/stock_market_db" # Internal Docker Path
 engine = create_engine(DATABASE_URL)
-
-# Correct path relative to the script's location (scripts/ai/)
-MODEL_FILENAME = '../../data/models/stock_predictor_xgboost.pkl' 
-print(f"Model will be saved as: {MODEL_FILENAME}")
+MODEL_FILENAME = '../../data/models/stock_predictor_xgboost.pkl'
 
 # --- 2. LOAD & PREPARE DATA ---
-def load_and_prepare_data():
-    print("Loading transformed data and preparing features...")
-    
+def load_full_trainable_data():
+    """Loads all historical data, filtering out current-day unknown targets."""
+    print("Loading transformed data for WFO training...")
     query = "SELECT * FROM transformed_stock_data ORDER BY timestamp ASC"
     
     try:
-        # Load the data, assuming the table structure is clean now
         df = pd.read_sql(text(query), engine, index_col='timestamp')
     except Exception as e:
-        print(f"ERROR: Failed to read data from transformed_stock_data. Make sure the table exists.")
+        print(f"ERROR: Failed to read data from transformed_stock_data. Reason: {e}")
         raise e
 
-    # --- CRITICAL FIX: DEDUPLICATE ROWS (to handle residual errors from transformation) ---
-    # We must ensure only one entry exists per day/ticker for training.
-    df = df.reset_index().drop_duplicates(subset=['timestamp', 'ticker'], keep='first').set_index('timestamp')
-
-    # --- FILTER AND DEFINE SETS ---
-    
-    # Exclude rows with unknown future target (-1) from training
+    # Filter out unknown targets (Target = -1)
     df_trainable = df[df['Target'] != -1].copy()
-    df_predict = df[df['Target'] == -1].copy()
-
-    # --- FEATURE EXCLUSION ---
-    # We exclude unreliable indicator columns (RSI, BBANDS) and admin columns.
-    # We rely on stable features: EMA_50, SMA_20, MACD, VIX_Close, BNO_Crude_Close.
+    
+    # Define columns to exclude from training features
     COLUMNS_TO_EXCLUDE = ['ticker', 'Future_Return', 'Target', 
                           'RSI_14', 'BBANDS_Upper', 'BBANDS_Middle', 'BBANDS_Lower']
                           
     FEATURE_COLS = df_trainable.columns.drop(COLUMNS_TO_EXCLUDE, errors='ignore')
     
-    # Define feature sets for training and prediction
-    X_trainable = df_trainable[FEATURE_COLS]
-    y_trainable = df_trainable['Target']
+    # Final feature and target sets
+    X = df_trainable[FEATURE_COLS]
+    y = df_trainable['Target']
     
-    X_predict = df_predict[FEATURE_COLS] # Features for current-day prediction
+    return X, y
 
-    # --- Split for Training/Testing (Walk-Forward Simulation) ---
-    split_point = int(len(X_trainable) * 0.80)
-    
-    X_train, X_test = X_trainable.iloc[:split_point], X_trainable.iloc[split_point:]
-    y_train, y_test = y_trainable.iloc[:split_point], y_trainable.iloc[split_point:]
-    
-    print(f"Data split: Training on {len(X_train)} days, Testing on {len(X_test)} days.")
-    print(f"Current data points ready for prediction: {len(X_predict)}.")
-    print(f"Total features used: {len(FEATURE_COLS)} ({list(FEATURE_COLS)})")
-    
-    return X_train, X_test, y_train, y_test, X_predict
+# --- 3. TRAIN AND EVALUATE MODEL (WFO Implementation) ---
+def train_and_evaluate_wfo(X_full, y_full):
+    """Performs Walk-Forward Optimization (WFO) and saves the final model."""
+    print("\nStarting Walk-Forward Optimization (WFO) Training...")
 
-# --- 3. TRAIN AND EVALUATE MODEL ---
-def train_and_save_model(X_train, X_test, y_train, y_test, X_predict):
-    print("\nStarting XGBoost Classifier Training...")
+    # WFO Parameters
+    TRAIN_WINDOW = 1000  # Train on approx 4 years of data (1000 trading days)
+    TEST_WINDOW = 100    # Validate/test parameters every 100 days
     
-    model = XGBClassifier(
-        objective='binary:logistic', 
-        n_estimators=150, 
-        learning_rate=0.08,
-        eval_metric='logloss', # Removed use_label_encoder=False as it's deprecated
-        random_state=42
+    results = [] # Store metrics from each test window
+
+    # Initial split point for the training window
+    start_point = TRAIN_WINDOW
+
+    while start_point < len(X_full):
+        # 1. Define Training Set (Fixed window size)
+        X_train = X_full.iloc[start_point - TRAIN_WINDOW : start_point]
+        y_train = y_full.iloc[start_point - TRAIN_WINDOW : start_point]
+        
+        # 2. Define Test Set (The next 100 days for out-of-sample validation)
+        end_point = min(start_point + TEST_WINDOW, len(X_full))
+        X_test = X_full.iloc[start_point : end_point]
+        y_test = y_full.iloc[start_point : end_point]
+
+        if X_test.empty:
+            break
+
+        # 3. Model Training (Simulating Parameter Optimization)
+        model = XGBClassifier(
+            objective='binary:logistic', n_estimators=150, learning_rate=0.08,
+            eval_metric='logloss', random_state=42
+        )
+        model.fit(X_train, y_train)
+        
+        # 4. Evaluation and Results Storage
+        y_pred = model.predict(X_test)
+        
+        # Store metrics from this window
+        results.append({
+            'accuracy': accuracy_score(y_test, y_pred),
+            'precision': precision_score(y_test, y_pred, zero_division=0),
+            'recall': recall_score(y_test, y_pred, zero_division=0),
+        })
+
+        # Move the window forward
+        start_point += TEST_WINDOW
+    
+    # --- Final Training and Saving ---
+    
+    # Train the final model on the largest possible dataset (all available data)
+    final_model = XGBClassifier(
+        objective='binary:logistic', n_estimators=150, learning_rate=0.08,
+        eval_metric='logloss', random_state=42
     )
+    final_model.fit(X_full, y_full)
+
+    # Calculate and save metrics
+    metrics_df = pd.DataFrame(results)
     
-    model.fit(X_train, y_train)
+    print("\n--- Walk-Forward Validation Metrics (Averaged Across All Windows) ---")
+    print(f"Average Precision: {metrics_df['precision'].mean():.4f}")
+    print(f"Average Recall:    {metrics_df['recall'].mean():.4f}")
     
-    # Predict and evaluate on the test set
-    y_pred = model.predict(X_test)
-    
-    # Calculate performance metrics
-    accuracy = accuracy_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred, zero_division=0)
-    recall = recall_score(y_test, y_pred, zero_division=0)
-    
-    print("\n--- Model Performance on Test Data (Walk-Forward Validation) ---")
-    print(f"Accuracy (Overall Correctness): {accuracy:.4f}")
-    print(f"Precision (When model says BUY, how often is it right): {precision:.4f}")
-    print(f"Recall (How many true BUY signals did the model find): {recall:.4f}")
-    
-    # --- CRITICAL FIX: ENSURE DIRECTORY EXISTS BEFORE SAVING ---
+    # Save Model File
     model_path = Path(MODEL_FILENAME)
     os.makedirs(model_path.parent, exist_ok=True)
+    joblib.dump(final_model, MODEL_FILENAME)
+    print(f"\nSUCCESS: Final model saved as: {MODEL_FILENAME}")
     
-    # Save the trained model file
-    joblib.dump(model, MODEL_FILENAME)
-    print(f"\nSUCCESS: Trained model saved as: {MODEL_FILENAME}")
-    
-    # --- SAVE FEATURE IMPORTANCE TO DB FOR LLM REASONING ---
+    # Save Feature Importance to DB
     feature_importance = pd.DataFrame({
-        'feature': X_train.columns,
-        'average_importance': model.feature_importances_
+        'feature': X_full.columns,
+        'average_importance': final_model.feature_importances_
     }).sort_values(by='average_importance', ascending=False)
     
     feature_importance.to_sql('model_feature_importance', engine, if_exists='replace', index=False)
-    print("SUCCESS: Feature importance saved to 'model_feature_importance' table for Chatbot.")
-    
-    return X_predict # Return data needed for prediction
+    print("SUCCESS: Feature importance saved for Chatbot.")
 
 # --- 4. MAIN EXECUTION ---
 if __name__ == "__main__":
     try:
-        X_train, X_test, y_train, y_test, X_predict = load_and_prepare_data()
-        train_and_save_model(X_train, X_test, y_train, y_test, X_predict)
+        # Load all data
+        X_full, y_full = load_full_trainable_data()
         
-        print("\nAI Model Phase Complete: Ready for Dashboard and Chatbot.")
+        # Perform WFO and final save
+        train_and_evaluate_wfo(X_full, y_full)
+        
+        print("\nAI Model Optimization Complete.")
     except Exception as e:
         print(f"\n*** FATAL ERROR: AI TRAINING ABORTED ***")
         print(f"Reason: {e}")
-        print("ACTION REQUIRED: Ensure 'transformed_stock_data' is fully populated.")
