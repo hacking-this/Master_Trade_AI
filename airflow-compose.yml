@@ -1,0 +1,88 @@
+version: '3.8'
+services:
+  # 1. Airflow's Internal Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: airflow_postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - ./airflow/pg_data:/var/lib/postgresql/data 
+    ports:
+      - "5433:5432" # Airflow metadata DB on host port 5433
+
+  # 2. Airflow Initialization Service (SETUP)
+  # This service runs the DB migration and user creation, then exits (0).
+  airflow-init:
+    build:
+      context: . 
+    image: custom_airflow_init:1.0
+    container_name: airflow_init
+    environment:
+      # Use the image name defined in the Dockerfile
+      # CRITICAL FIX: Tell Airflow to install dependencies from your requirements.txt
+      _PIP_ADDITIONAL_REQUIREMENTS: -r /usr/local/airflow/project_root/requirements.txt
+      AIRFLOW__CORE__FERNET__KEY: 1HRwCbCJOt9a34RI9cxYe7-5Ra9SQaoyu-9haK0Plf0=
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: super-secret
+      AIRFLOW_UID: 50000
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - .:/usr/local/airflow/project_root
+    depends_on:
+      - postgres
+    # CRITICAL: Run DB migration AND user creation in one entrypoint
+    entrypoint: /bin/bash -c "airflow db migrate && airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin"
+
+  # 3. Airflow Webserver (UI)
+  webserver:
+    build:
+      context: . 
+    image: custom_airflow_webserver:1.0
+    container_name: airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080" # Airflow UI accessible on http://localhost:8080
+    environment:
+      # CRITICAL FIX: Tell Airflow to install dependencies from your requirements.txt
+      _PIP_ADDITIONAL_REQUIREMENTS: -r /usr/local/airflow/project_root/requirements.txt
+      AIRFLOW__CORE__FERNET__KEY: 1HRwCbCJOt9a34RI9cxYe7-5Ra9SQaoyu-9haK0Plf0=
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: super-secret
+      AIRFLOW_UID: 50000
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - .:/usr/local/airflow/project_root
+    # CRITICAL: Wait for initialization to complete successfully
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /opt/airflow/airflow-webserver.pid ]"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 4. Airflow Scheduler
+  scheduler:
+    build:
+      context: .
+    image: custom_airflow_scheduler:1.0
+    container_name: airflow_scheduler
+    command: scheduler
+    environment:
+      # CRITICAL FIX: Tell Airflow to install dependencies from your requirements.txt
+      _PIP_ADDITIONAL_REQUIREMENTS: -r /usr/local/airflow/project_root/requirements.txt
+      AIRFLOW__CORE__FERNET__KEY: 1HRwCbCJOt9a34RI9cxYe7-5Ra9SQaoyu-9haK0Plf0=
+      AIRFLOW__WEBSERVER__SECRET_KEY: super-secret
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW_UID: 50000
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - .:/usr/local/airflow/project_root
+    # CRITICAL: Wait for initialization to complete successfully
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully

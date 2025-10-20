@@ -1,0 +1,13 @@
+# Virtual Environment
+venv/
+__pycache__/
+
+# Python/ML Artefacts
+*.pyc
+/data/models/*.pkl
+
+# Docker/Airflow Data (Crucial to ignore large volumes)
+/airflow/logs/
+/airflow/pg_data/
+/airflow/dags/*.pyc
+/node_modules/
