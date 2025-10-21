@@ -8,7 +8,7 @@ import os
 from pathlib import Path 
 
 # --- 1. CONFIGURATION ---
-DATABASE_URL = "postgresql://user:password@ai_stock_project-db-1:5432/stock_market_db" # Internal Docker Path
+DATABASE_URL = "postgresql+psycopg2://ai_stock_trader_user:WcPpqu1IDRnqv95NoV1dUsMp17RCbTMR@dpg-d3rijvur433s73e6adeg-a.oregon-postgres.render.com/ai_stock_trader"
 engine = create_engine(DATABASE_URL)
 MODEL_FILENAME = '../../data/models/stock_predictor_xgboost.pkl'
 

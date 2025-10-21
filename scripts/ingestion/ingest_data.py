@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import time
 
 # --- 1. CONFIGURATION ---
-DATABASE_URL = "postgresql://user:password@ai_stock_project-db-1:5432/stock_market_db"
+DATABASE_URL = "postgresql+psycopg2://ai_stock_trader_user:WcPpqu1IDRnqv95NoV1dUsMp17RCbTMR@dpg-d3rijvur433s73e6adeg-a.oregon-postgres.render.com/ai_stock_trader" 
 engine = create_engine(DATABASE_URL)
 
 # List of all tickers, including stocks and macro proxies
@@ -141,6 +141,10 @@ if __name__ == "__main__":
             with conn.begin(): 
                 conn.execute(text(
                     """
+                    -- CRITICAL FIX: Enable the TimescaleDB extension first
+                    CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+                    -- Create the base table
                     CREATE TABLE IF NOT EXISTS raw_stock_data (
                         timestamp DATE NOT NULL,
                         ticker VARCHAR(20) NOT NULL,
@@ -148,6 +152,8 @@ if __name__ == "__main__":
                         adj_close NUMERIC, volume BIGINT,
                         PRIMARY KEY (timestamp, ticker)
                     );
+
+                    -- Convert to hypertable (now that the extension is enabled)
                     SELECT create_hypertable('raw_stock_data', 'timestamp', if_not_exists => TRUE);
                     """
                 ))
