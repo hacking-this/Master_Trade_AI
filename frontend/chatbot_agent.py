@@ -113,7 +113,6 @@ def generate_insights(user_query: str):
     
     # Create the LLM chain
     chain = template | LLM | StrOutputParser()
-    
     # Invoke the chain with all data
     response = chain.invoke({
         "query": user_query,

@@ -108,9 +108,7 @@ with col1:
     # Ticker Selection
     TICKERS = list(signal_df['Ticker'].unique()) if not signal_df.empty else ['RELIANCE.NS', 'HDFCBANK.NS']
     selected_ticker = st.selectbox("Stock Ticker:", TICKERS)
-    
     df_chart = load_historical_data(selected_ticker)
-    
     # --- MINIMALIST CANDLESTICK CHART ---
     fig = go.Figure(data=[go.Candlestick(
         x=df_chart.index,
