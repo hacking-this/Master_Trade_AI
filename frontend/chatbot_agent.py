@@ -1,3 +1,5 @@
+import streamlit as st
+import os
 import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine, text
@@ -7,7 +9,12 @@ from langchain_core.output_parsers import StrOutputParser
 from predict_signals import get_latest_signals 
 
 # --- 1. CONFIGURATION & SETUP ---
-DATABASE_URL = "postgresql://user:password@localhost:5432/stock_market_db"
+try:
+    DATABASE_URL = st.secrets["DATABASE_URL"]
+except:
+    # Fallback for testing outside Streamlit/in Airflow if not using secrets management
+    DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://default:url@localhost:5432/default")
+
 engine = create_engine(DATABASE_URL)
 
 # Initialize Ollama LLM
