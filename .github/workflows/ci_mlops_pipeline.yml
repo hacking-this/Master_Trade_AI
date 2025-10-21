@@ -11,13 +11,6 @@ on:
     # Runs the pipeline daily at 00:30 UTC (Adjust time as needed for daily job)
     - cron: '30 0 * * *' 
 
-env:
-  # The final Docker image name used for deployment
-  IMAGE_NAME: master-trader-airflow
-  REGISTRY: ghcr.io
-  # The tag ensures the image name includes the repository path
-  IMAGE_TAG: ${{ github.repository }}/${{ env.IMAGE_NAME }}:latest
-
 jobs:
   # 1. Continuous Integration (CI): Test Code Quality and Dependencies
   ci_check:
@@ -40,7 +33,7 @@ jobs:
       - name: Build Custom Airflow Image Test
         # This confirms that the Dockerfile can still build successfully with all packages
         # and serves as a quick self-check before the final push.
-        run: docker build -t ${{ env.IMAGE_TAG }}-test . 
+        run: docker build -t master-trader-airflow:test . 
 
   # 2. Continuous Deployment (CD): Build Final Image and Push to GHCR
   cd_docker_push:
@@ -54,7 +47,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }} # Correct syntax for accessing GitHub's identity
+          username: ${{ github.actor }}
+          # GITHUB_TOKEN is automatically provided by GitHub Actions for security
           password: ${{ secrets.GITHUB_TOKEN }} 
 
       # 2. Set up Docker BuildX
@@ -67,6 +61,6 @@ jobs:
         with:
           context: . # Build from the project root directory
           push: true
-          # Tags the image with the repository name and 'latest'
+          # FINAL CORRECT TAG SYNTAX: Uses GitHub's environment variables to construct the full image name
           tags: ghcr.io/${{ github.repository }}/master-trader-airflow:latest
           file: ./Dockerfile
