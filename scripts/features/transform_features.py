@@ -3,7 +3,7 @@ import numpy as np
 from sqlalchemy import create_engine, text
 
 # --- 1. CONFIGURATION ---
-DATABASE_URL = "postgresql://user:password@ai_stock_project-db-1:5432/stock_market_db" # Corrected internal Docker path
+DATABASE_URL = "postgresql+psycopg2://ai_stock_trader_user:WcPpqu1IDRnqv95NoV1dUsMp17RCbTMR@dpg-d3rijvur433s73e6adeg-a.oregon-postgres.render.com/ai_stock_trader" 
 engine = create_engine(DATABASE_URL)
 
 STOCK_TICKERS = ['RELIANCE.NS', 'HDFCBANK.NS', 'INFY.NS', 'TCS.NS', 'HINDUNILVR.NS']

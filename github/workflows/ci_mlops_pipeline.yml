@@ -1,10 +1,22 @@
 name: MLOps Pipeline CI/CD
 
-# Trigger this workflow on every push to the main branch
+# Trigger this workflow on two events:
+# 1. Every push to the main branch (for code changes/bug fixes)
+# 2. Daily via CRON (to ensure the deployment image is always fresh)
 on:
   push:
     branches:
       - main
+  schedule:
+    # Runs the pipeline daily at 00:30 UTC (Adjust time as needed for daily job)
+    - cron: '30 0 * * *' 
+
+env:
+  # The final Docker image name used for deployment
+  IMAGE_NAME: master-trader-airflow
+  REGISTRY: ghcr.io
+  # The tag ensures the image name includes the repository path
+  IMAGE_TAG: ${{ github.repository }}/${{ env.IMAGE_NAME }}:latest
 
 jobs:
   # 1. Continuous Integration (CI): Test Code Quality and Dependencies
@@ -22,11 +34,40 @@ jobs:
         run: pip install -r requirements.txt flake8
         
       - name: Run Code Linter (Static Analysis)
-        # Checks for syntax errors and stylistic problems
+        # Checks for syntax errors and stylistic problems in all scripts
         run: flake8 scripts/ frontend/
         
       - name: Build Custom Airflow Image Test
-        # This checks that the Dockerfile can still build successfully with all the secrets/keys
-        run: docker build -t master-trader-airflow:test . 
+        # This confirms that the Dockerfile can still build successfully with all packages
+        # and serves as a quick self-check before the final push.
+        run: docker build -t ${{ env.IMAGE_TAG }}-test . 
 
-      # NOTE: We skip deployment here, as actual deployment is done using the 'docker compose' command manually
+  # 2. Continuous Deployment (CD): Build Final Image and Push to GHCR
+  cd_docker_push:
+    runs-on: ubuntu-latest
+    needs: ci_check # Only run deployment if CI check succeeds
+    steps:
+      - uses: actions/checkout@v3
+      
+      # 1. Login to GitHub Container Registry (GHCR)
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # GITHUB_TOKEN is automatically provided by GitHub Actions for security
+          password: ${{ secrets.GITHUB_TOKEN }} 
+
+      # 2. Set up Docker BuildX
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3. Build and Push the final MLOps Image
+      - name: Build and push MLOps image
+        uses: docker/build-and-push-action@v5
+        with:
+          context: . # Build from the project root directory
+          push: true
+          # Tags the image with the repository name and 'latest'
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_TAG }}
+          file: ./Dockerfile
