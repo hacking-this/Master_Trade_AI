@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine, text
 from langchain_community.llms import Ollama
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from predict_signals import get_latest_signals 
 
