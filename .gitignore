@@ -11,3 +11,5 @@ __pycache__/
 /airflow/pg_data/
 /airflow/dags/*.pyc
 /node_modules/
+
+.streamit/secrets.toml

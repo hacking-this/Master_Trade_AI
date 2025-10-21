@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -12,7 +13,12 @@ from chatbot_agent import generate_insights, LLM
 # --- 1. CONFIGURATION ---
 # Set the layout to wide for better chart viewing
 st.set_page_config(layout="wide") 
-DATABASE_URL = "postgresql://user:password@localhost:5432/stock_market_db"
+try:
+    DATABASE_URL = st.secrets["DATABASE_URL"]
+except:
+    # Fallback for testing outside Streamlit/in Airflow if not using secrets management
+    DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://default:url@localhost:5432/default")
+
 engine = create_engine(DATABASE_URL)
 
 # --- 2. DATA LOAD FUNCTIONS ---
