@@ -8,3 +8,5 @@ scikit-learn
 joblib
 streamlit
 plotly
+langchain
+langchain-community
