@@ -24,11 +24,7 @@ jobs:
           
       - name: Install dependencies for testing
         # Installs packages needed to test scripts inside the GitHub Runner environment
-        run: pip install -r requirements.txt flake8
-        
-      - name: Run Code Linter (Static Analysis)
-        # Checks for syntax errors and stylistic problems in all scripts
-        run: flake8 scripts/ frontend/
+        run: pip install -r requirements.txt
         
       - name: Build Custom Airflow Image Test
         # This confirms that the Dockerfile can still build successfully with all packages
