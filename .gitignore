@@ -12,4 +12,4 @@ __pycache__/
 /airflow/dags/*.pyc
 /node_modules/
 
-/.streamit/secrets.toml
+.streamit/secrets.toml
