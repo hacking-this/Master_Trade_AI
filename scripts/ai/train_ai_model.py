@@ -8,10 +8,9 @@ import os
 from pathlib import Path 
 
 # --- 1. CONFIGURATION ---
-DATABASE_URL = ("postgresql+psycopg2://ai_stock_trader_user:WcPpqu1IDRnqv95NoV1dUsMp17RCbTMR@dpg-d3rijvur433s73e6adeg-a.oregon-postgres.render.com/ai_stock_trader""?sslmode=require")
-
+DATABASE_URL = "postgresql+psycopg2://ai_stock_trader_user:WcPpqu1IDRnqv95NoV1dUsMp17RCbTMR@dpg-d3rijvur433s73e6adeg-a.oregon-postgres.render.com/ai_stock_trader" 
 engine = create_engine(DATABASE_URL)
-MODEL_FILENAME = '../../data/models/stock_predictor_xgboost.pkl'
+MODEL_FILENAME = '../../data/models/stock_predictor_xgboost.pkl' 
 
 # --- 2. LOAD & PREPARE DATA ---
 def load_full_trainable_data():
@@ -28,7 +27,7 @@ def load_full_trainable_data():
     # Filter out unknown targets (Target = -1)
     df_trainable = df[df['Target'] != -1].copy()
     
-    # Define columns to exclude from training features
+    # Define features to exclude (those we know were unstable or are administrative)
     COLUMNS_TO_EXCLUDE = ['ticker', 'Future_Return', 'Target', 
                           'RSI_14', 'BBANDS_Upper', 'BBANDS_Middle', 'BBANDS_Lower']
                           
@@ -46,20 +45,19 @@ def train_and_evaluate_wfo(X_full, y_full):
     print("\nStarting Walk-Forward Optimization (WFO) Training...")
 
     # WFO Parameters
-    TRAIN_WINDOW = 1000  # Train on approx 4 years of data (1000 trading days)
+    TRAIN_WINDOW = 1000  # Train on approx 4 years of data
     TEST_WINDOW = 100    # Validate/test parameters every 100 days
     
-    results = [] # Store metrics from each test window
+    results = [] 
 
-    # Initial split point for the training window
     start_point = TRAIN_WINDOW
 
     while start_point < len(X_full):
-        # 1. Define Training Set (Fixed window size)
+        # 1. Define Training Set 
         X_train = X_full.iloc[start_point - TRAIN_WINDOW : start_point]
         y_train = y_full.iloc[start_point - TRAIN_WINDOW : start_point]
         
-        # 2. Define Test Set (The next 100 days for out-of-sample validation)
+        # 2. Define Test Set 
         end_point = min(start_point + TEST_WINDOW, len(X_full))
         X_test = X_full.iloc[start_point : end_point]
         y_test = y_full.iloc[start_point : end_point]
@@ -67,7 +65,7 @@ def train_and_evaluate_wfo(X_full, y_full):
         if X_test.empty:
             break
 
-        # 3. Model Training (Simulating Parameter Optimization)
+        # 3. Model Training 
         model = XGBClassifier(
             objective='binary:logistic', n_estimators=150, learning_rate=0.08,
             eval_metric='logloss', random_state=42
@@ -77,14 +75,12 @@ def train_and_evaluate_wfo(X_full, y_full):
         # 4. Evaluation and Results Storage
         y_pred = model.predict(X_test)
         
-        # Store metrics from this window
         results.append({
             'accuracy': accuracy_score(y_test, y_pred),
             'precision': precision_score(y_test, y_pred, zero_division=0),
             'recall': recall_score(y_test, y_pred, zero_division=0),
         })
 
-        # Move the window forward
         start_point += TEST_WINDOW
     
     # --- Final Training and Saving ---
@@ -121,10 +117,7 @@ def train_and_evaluate_wfo(X_full, y_full):
 # --- 4. MAIN EXECUTION ---
 if __name__ == "__main__":
     try:
-        # Load all data
         X_full, y_full = load_full_trainable_data()
-        
-        # Perform WFO and final save
         train_and_evaluate_wfo(X_full, y_full)
         
         print("\nAI Model Optimization Complete.")

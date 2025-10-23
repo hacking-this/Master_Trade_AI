@@ -1,27 +1,22 @@
-import streamlit as st
-import os
 import pandas as pd
-import numpy as np
 from sqlalchemy import create_engine, text
 from langchain_community.llms import Ollama
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate # Corrected import path
 from langchain_core.output_parsers import StrOutputParser
 from predict_signals import get_latest_signals 
+import json
+
 
 # --- 1. CONFIGURATION & SETUP ---
-try:
-    DATABASE_URL = st.secrets["DATABASE_URL"]
-except:
-    # Fallback for testing outside Streamlit/in Airflow if not using secrets management
-    DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://default:url@localhost:5432/default")
-
+DATABASE_URL = "postgresql+psycopg2://ai_stock_trader_user:WcPpqu1IDRnqv95NoV1dUsMp17RCbTMR@dpg-d3rijvur433s73e6adeg-a.oregon-postgres.render.com/ai_stock_trader"
 engine = create_engine(DATABASE_URL)
 
 # Initialize Ollama LLM
 try:
-    LLM = Ollama(model="phi3", temperature=0.2) 
+    LLM = Ollama(model="mistral", temperature=0.2) 
 except Exception as e:
     LLM = None 
+
 
 # --- 2. DATA RETRIEVAL FUNCTIONS ---
 
@@ -29,6 +24,7 @@ def load_feature_importance():
     """Loads the AI model's top Feature Importance for XAI reasoning."""
     query = "SELECT feature, average_importance FROM model_feature_importance ORDER BY average_importance DESC LIMIT 5"
     df = pd.read_sql(text(query), engine)
+    
     importance_list = [f"{row['feature']} (Influence: {row['average_importance']:.4f})" for index, row in df.iterrows()]
     return "\n".join(importance_list)
 
@@ -55,7 +51,7 @@ def load_geopolitical_context():
 def perform_dynamic_research():
     """
     Generates structured, simulated geopolitical research results for citation.
-    This replaces the external search tool call with high-value mock data.
+    This replaces the external search tool call with high-value mock data for stability.
     """
     simulated_news = [
         {"source_title": "Economic Times (Simulated)", 
@@ -69,7 +65,7 @@ def perform_dynamic_research():
     ]
     
     formatted_research = []
-    for i, item in enumerate(simulated_news):
+    for item in simulated_news:
         formatted_research.append(f"[{item['source_title']}]: {item['snippet']}")
 
     return "\n".join(formatted_research)
@@ -86,7 +82,7 @@ def generate_insights(user_query: str):
     signals_df = get_latest_signals()
     
     # 1. Retrieve necessary context data
-    research_text = perform_dynamic_research() # Use simulated research
+    research_text = perform_dynamic_research()
     signals_text = signals_df.to_markdown(index=False)
     feature_importance_text = load_feature_importance()
     geo_context_text = load_geopolitical_context()
@@ -95,6 +91,7 @@ def generate_insights(user_query: str):
     template = ChatPromptTemplate.from_messages([
         ("system", 
          "You are a Master Trader AI for the Indian Stock Market (BSE/NSE). "
+         "Your primary goal is to translate complex data into clear, human-friendly investment advice. "
          "Your response MUST be concise, professional, and directly address the user's inquiry based ONLY on the provided data and context. "
          "Follow these instructions:"
          "1. **Analyze Signals:** Review the Trading Signals list. Determine the primary recommendation."
@@ -113,13 +110,43 @@ def generate_insights(user_query: str):
     
     # Create the LLM chain
     chain = template | LLM | StrOutputParser()
+    
     # Invoke the chain with all data
     response = chain.invoke({
         "query": user_query,
         "signals": signals_text,
         "importance": feature_importance_text,
         "geo_context": geo_context_text,
-        "research_context": research_text
+        "geopolitical_research": research_text
     })
     
     return response
+
+# --- 5. MAIN EXECUTION (Chat Loop) ---
+
+if __name__ == "__main__":
+    print("--- Master Trader AI Initialized ---")
+    
+    # Initial checks
+    try:
+        load_feature_importance()
+        load_geopolitical_context()
+        print("\nDatabase and Model connections successful. AI is online.")
+    except Exception as e:
+        print(f"ERROR: Database or Model not accessible. Details: {e}")
+        exit()
+
+    while True:
+        user_input = input("\n[Trader] >>> ")
+        if user_input.lower() == 'exit':
+            print("\n[AI Master] > Session closed. Happy trading.")
+            break
+        
+        try:
+            response = generate_insights(user_input)
+            
+            print(f"\n[AI Master] >\n{response}")
+        except Exception as e:
+            # Catch errors during LLM generation or chain failure
+            print(f"\n[AI Master] > Error processing request: {e}")
+            break
