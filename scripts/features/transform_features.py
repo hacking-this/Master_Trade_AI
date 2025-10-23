@@ -3,7 +3,8 @@ import numpy as np
 from sqlalchemy import create_engine, text
 
 # --- 1. CONFIGURATION ---
-DATABASE_URL = "postgresql+psycopg2://ai_stock_trader_user:WcPpqu1IDRnqv95NoV1dUsMp17RCbTMR@dpg-d3rijvur433s73e6adeg-a.oregon-postgres.render.com/ai_stock_trader" 
+DATABASE_URL = ("postgresql+psycopg2://ai_stock_trader_user:WcPpqu1IDRnqv95NoV1dUsMp17RCbTMR@dpg-d3rijvur433s73e6adeg-a.oregon-postgres.render.com/ai_stock_trader""?sslmode=require")
+
 engine = create_engine(DATABASE_URL)
 
 STOCK_TICKERS = ['RELIANCE.NS', 'HDFCBANK.NS', 'INFY.NS', 'TCS.NS', 'HINDUNILVR.NS']
