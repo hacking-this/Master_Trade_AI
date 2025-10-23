@@ -2,24 +2,15 @@ import pandas as pd
 import numpy as np
 import joblib
 from sqlalchemy import create_engine, text
-import os # Required for model path management
-import streamlit as st # Ensure this is imported at the top
+import os 
 
 # --- 1. CONFIGURATION ---
-# IMPORTANT: Use the full cloud URL for the database connection
-try:
-    DATABASE_URL = st.secrets["DATABASE_URL"]
-except:
-    # Fallback for testing outside Streamlit/in Airflow if not using secrets management
-    DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://default:url@localhost:5432/default")
-
+# IMPORTANT: Use the full external URL that works for your MLOps system
+DATABASE_URL = "postgresql+psycopg2://ai_stock_trader_user:WcPpqu1IDRnqv95NoV1dUsMp17RCbTMR@dpg-d3rijvur433s73e6adeg-a.oregon-postgres.render.com/ai_stock_trader"
 engine = create_engine(DATABASE_URL)
 
-# Define the path to the model file, relative to the project root
-# (frontend/predict_signals.py needs to go up one directory to find data/models)
+# Define the path to the model file, relative to the frontend/ directory
 MODEL_PATH = '../data/models/stock_predictor_xgboost.pkl' 
-
-# --- 2. LOAD MODEL AND DATA ---
 
 # Load model once when the script starts (XGBoost is loaded via joblib)
 try:
@@ -27,27 +18,29 @@ try:
         XGB_MODEL = joblib.load(MODEL_PATH)
     else:
         XGB_MODEL = None
-except Exception as e:
+except Exception:
     XGB_MODEL = None
 
-# --- 3. PREDICTION LOGIC ---
 
-# The original model was trained ONLY on these 11 features. 
-# We must select these exact columns and ignore the new WFO features.
+# --- 2. PREDICTION LOGIC ---
+
+# These are the *exact* features saved by train_ai_model.py. 
+# The prediction data MUST match this list precisely.
 FINAL_TRAINING_FEATURES = [
     'open', 'high', 'low', 'close', 'adj_close', 'volume', 
-    'SMA_20', 'EMA_50', 'MACD', 
-    'VIX_Close', 'BNO_Crude_Close'
+    'SMA_20', 'EMA_50', 'MACD', 'MACD_Signal', 'MACD_Hist', 
+    'VIX_Close', 'BNO_Crude_Close', 
+    'Lag_Return_1d', 'Lag_Return_3d', 'Lag_Return_5d', 'Lag_Return_10d', 
+    'DayOfWeek', 'DayOfMonth', 'Quarter'
 ]
 
 def get_latest_signals():
-    """Loads the model and generates buy/sell signals for the latest known data."""
+    """Loads the latest data (Target = -1) and generates buy/sell probabilities."""
     
     if XGB_MODEL is None:
         return pd.DataFrame({'Signal': ['AI Model Offline. Rerun training script.']})
 
-    # Load the latest data that has a Target of -1 (unknown future)
-    # This represents the data that is ready for a *new* prediction.
+    # Load all data with unknown future targets (Target = -1)
     query = """
         SELECT *
         FROM transformed_stock_data
@@ -55,32 +48,34 @@ def get_latest_signals():
         ORDER BY timestamp DESC;
     """
     try:
-        df_predict = pd.read_sql(text(query), engine)
-    except Exception as e:
-        return pd.DataFrame({'Signal': [f"Database Error: {str(e)}"]})
-    
+        df_predict = pd.read_sql(text(query), engine).set_index('timestamp')
+    except Exception:
+        return pd.DataFrame({'Signal': ['Database Error: Could not retrieve prediction data.']})
+
     if df_predict.empty:
         return pd.DataFrame({'Signal': ['No new data points found for prediction.']})
 
-    # CRITICAL FIX: DEDUPLICATION AND FEATURE SELECTION
+    # CRITICAL FIX: ISOLATE THE LATEST DATE for a clean dashboard view
+    latest_date = df_predict.index.max()
+    df_predict = df_predict[df_predict.index == latest_date].copy()
     
-    # 1. Deduplicate records (removes the 5-row error artifact)
-    df_predict.drop_duplicates(subset=['timestamp', 'ticker'], keep='first', inplace=True)
+    # 1. Deduplicate records
+    df_predict.drop_duplicates(subset=['ticker'], keep='first', inplace=True)
     
-    # 2. Select ONLY the features the saved model expects (11 columns)
+    # 2. Select ONLY the features the saved model expects (20 columns)
     X_predict = df_predict[FINAL_TRAINING_FEATURES]
     
     # Generate probability scores (proba[1] is the chance of Target=1 / BUY)
     probabilities = XGB_MODEL.predict_proba(X_predict)[:, 1]
     
-    # --- 4. COMPILE RESULTS ---
+    # --- 3. COMPILE RESULTS ---
     
-    # Define thresholds based on analysis (40% precision requires a cautious approach)
+    # Define thresholds (based on your initial 44% precision score, we use a cautious threshold)
     threshold_strong = 0.60
     threshold_weak = 0.52 
     
     signals = pd.DataFrame({
-        'Date': df_predict['timestamp'],
+        'Date': df_predict.index,
         'Ticker': df_predict['ticker'],
         'Latest Price (₹)': df_predict['close'], 
         'Probability_Buy': probabilities,
@@ -88,10 +83,8 @@ def get_latest_signals():
                            np.where(probabilities >= threshold_weak, 'WEAK BUY', 'HOLD/SELL'))
     })
     
-    # Merge is unnecessary now; all data is pulled in one clean DF
     return signals.sort_values(by='Probability_Buy', ascending=False).reset_index(drop=True)
 
 if __name__ == '__main__':
-    # Test the function (optional)
     result = get_latest_signals()
-    print(result)
+    print(result.head(10))
