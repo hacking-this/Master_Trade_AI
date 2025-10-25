@@ -33,7 +33,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ lower(github.repository) }}/master-trader-airflow:latest
+          tags: ghcr.io/${{ github.repository }}/master-trader-airflow:latest
           file: ./Dockerfile
 
   # Job 2: Run the Live MLOps Pipeline (The Airflow Replacement)
