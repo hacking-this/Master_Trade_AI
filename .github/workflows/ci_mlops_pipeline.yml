@@ -11,6 +11,11 @@ on:
     # Runs the pipeline daily at 00:30 UTC (Adjust time as needed for daily job)
     - cron: '30 0 * * *' 
 
+# 👇 ADD/UPDATE THIS SECTION
+permissions:
+  contents: read    # Keeps read access for checking out the code
+  packages: write   # Grants write access to push Docker images to GHCR
+
 jobs:
   # 1. Continuous Integration (CI): Test Code Quality and Dependencies
   ci_check:
