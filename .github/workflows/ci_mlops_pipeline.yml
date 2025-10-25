@@ -4,7 +4,7 @@ on:
   # 1. Trigger on Push (for CI/CD checks)
   push:
     branches:
-      - automation
+      - main
       
   # 2. Trigger on Schedule (The MLOps Scheduler)
   schedule:
@@ -12,8 +12,10 @@ on:
     - cron: '30 0 * * *' 
 
 jobs:
-  # Job 1: Build, Lint, and Push the Docker Image (Your CI/CD)
+  # Job 1: Build & Push the Docker Image (Runs on Code Push)
   build_and_push_docker:
+    # This job only runs when you push code
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -26,21 +28,24 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Set up Docker Buildx
+        # Use the most stable version 3 for setup
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push MLOps image
+        # Use the stable version 5 for the build
         uses: docker/build-and-push-action@v5
         with:
           context: .
           push: true
+          # This syntax is now correct as your repository name is lowercase
           tags: ghcr.io/${{ github.repository }}/master-trader-airflow:latest
           file: ./Dockerfile
 
-  # Job 2: Run the Live MLOps Pipeline (The Airflow Replacement)
+  # Job 2: Run the Live MLOps Pipeline (Runs Daily)
   run_daily_pipeline:
-    # This job runs *after* the build, or on its own schedule
+    # This job only runs on the 'schedule' trigger
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
-    needs: build_and_push_docker # Only runs if the build is successful
     
     steps:
       - uses: actions/checkout@v3
