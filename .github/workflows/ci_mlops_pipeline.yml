@@ -58,5 +58,5 @@ jobs:
           context: . # Build from the project root directory
           push: true
           # FINAL CORRECT TAG SYNTAX: Uses GitHub's environment variables to construct the full image name
-          tags: ghcr.io/${{ github.repository_owner }}/master-trader-airflow:latest
+          tags: ghcr.io/${{ lower(github.repository) }}/master-trader-airflow:latest
           file: ./Dockerfile
