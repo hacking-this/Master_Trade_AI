@@ -1,7 +1,9 @@
 version: '3.8'
 services:
+  # Your TimescaleDB Service
   db:
-    image: timescale/timescaledb:latest-pg16 
+    image: timescale/timescaledb:latest-pg16
+    container_name: airflow-db
     restart: always
     environment:
       POSTGRES_USER: user
@@ -10,7 +12,55 @@ services:
     volumes:
       - stock_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432" 
-    
+      - "5432:5432" # Exposes your DB to your host machine
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "user"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # This job runs the database migrations
+  airflow-init:
+    # This image will be set by the CI/CD pipeline
+    image: ${AIRFLOW_IMAGE_TAG}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Use the credentials from your 'db' service
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://user:password@db:5432/stock_market_db
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    # This command will initialize or migrate the database
+    command: airflow db upgrade
+
+  # The Airflow Web UI
+  airflow-webserver:
+    # This image will be set by the CI/CD pipeline
+    image: ${AIRFLOW_IMAGE_TAG}
+    container_name: airflow-webserver
+    restart: always
+    depends_on:
+      - airflow-init
+    ports:
+      - "8080:8080" # This exposes the UI on port 8080
+    environment:
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://user:password@db:5432/stock_market_db
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__WEBSERVER__SECRET_KEY=set-a-strong-random-key-here # Change this!
+    command: airflow webserver
+
+  # The Airflow Scheduler
+  airflow-scheduler:
+    # This image will be set by the CI/CD pipeline
+    image: ${AIRFLOW_IMAGE_TAG}
+    container_name: airflow-scheduler
+    restart: always
+    depends_on:
+      - airflow-init
+    environment:
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://user:password@db:5432/stock_market_db
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    command: airflow scheduler
+
 volumes:
   stock_data:

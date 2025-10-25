@@ -1,83 +1,105 @@
 name: AI Stock Pipeline CI/CD and Daily MLOps Run
 
 on:
-  # 1. Trigger on Push (for CI/CD checks)
   push:
     branches:
       - automation
-      
-  # 2. Trigger on Schedule (The MLOps Scheduler)
   schedule:
-    # Runs the pipeline daily at 00:30 UTC (approx. 6:00 AM IST)
     - cron: '30 0 * * *' 
 
 jobs:
-  # Job 1: Build & Push the Docker Image (Runs on Code Push)
+  # Job 1: Build & Push the Docker Image (Unchanged)
   build_and_push_docker:
-    # This job only runs when you push code
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-
-    # Grant write permissions for pushing to the GitHub Container Registry (ghcr.io)
     permissions:
       contents: read
       packages: write 
-      
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-      
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }} 
-
-      # --- MANUAL DOCKER BUILD & PUSH (Bypassing Failing Action) ---
-      
       - name: Build and Push Docker image
         run: |
-          # Define the image tag using the lowercase repository name
-          # This assumes your repository is correctly named 'master_trade_ai'
+          # This is the image name
           IMAGE_TAG="ghcr.io/${{ github.repository }}/master-trader-airflow:latest"
-          
-          # Build the image using the standard Docker CLI
           docker build -t $IMAGE_TAG -f ./Dockerfile .
-          
-          # Push the image
           docker push $IMAGE_TAG
 
-  # Job 2: Run the Live MLOps Pipeline (Runs Daily)
+  # Job 2: Deploy the Docker Image to the Server
+  deploy_to_server:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: build_and_push_docker # Must run after the build
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Create project directory on server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: mkdir -p ~/my-airflow-project # Create folder for the project
+
+      - name: Copy docker-compose.yml to server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "docker-compose.yml" # File from repo
+          target: "~/my-airflow-project"  # Destination folder on server
+
+      - name: Deploy Services on Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # Navigate to the project directory
+            cd ~/my-airflow-project
+
+            # Log in to GitHub Container Registry *on the server*
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # === THIS IS THE FIX ===
+            # Export the image name built in Job 1 as an environment variable
+            # This variable will be read by the docker-compose.yml file
+            export AIRFLOW_IMAGE_TAG="ghcr.io/${{ github.repository }}/master-trader-airflow:latest"
+            
+            # Pull the new image version
+            docker compose pull
+            
+            # Stop and restart all services with the new image
+            docker compose up -d --remove-orphans
+
+  # Job 3: Run the Live MLOps Pipeline (Unchanged)
   run_daily_pipeline:
-    # This job only runs on the 'schedule' trigger
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
-    
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python 3.9
         uses: actions/setup-python@v3
         with:
           python-version: '3.9'
-          
       - name: Install All Python Dependencies
         run: pip install -r requirements.txt
-        
       - name: Run Full MLOps Pipeline
-        # Inject the cloud database URL from GitHub Secrets
         env:
           DATABASE_URL: ${{ secrets.RENDER_DB_URL }} 
         run: |
           echo "Starting Daily Pipeline Run..."
-          
-          # Task 1: Ingest Data (Watermarked)
           python scripts/ingestion/ingest_data.py
-          
-          # Task 2: Feature Engineering (WFO Features)
           python scripts/features/transform_features.py
-          
-          # Task 3: AI Training (WFO Model)
           python scripts/ai/train_ai_model.py
-          
           echo "MLOps Pipeline run completed successfully."
