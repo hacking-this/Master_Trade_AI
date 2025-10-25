@@ -4,7 +4,7 @@ on:
   # 1. Trigger on Push (for CI/CD checks)
   push:
     branches:
-      - main
+      - automation
       
   # 2. Trigger on Schedule (The MLOps Scheduler)
   schedule:
