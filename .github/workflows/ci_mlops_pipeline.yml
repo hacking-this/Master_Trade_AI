@@ -17,6 +17,15 @@ jobs:
     # This job only runs when you push code
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+
+    # --- CRITICAL FIX: GRANT WRITE PERMISSIONS FOR PACKAGES ---
+    # This block grants the GITHUB_TOKEN the necessary permissions
+    # to push the built image to your container registry (ghcr.io).
+    permissions:
+      contents: read  # Required for actions/checkout
+      packages: write # Required to push to GHCR
+    # -----------------------------------------------------------
+
     steps:
       - uses: actions/checkout@v3
       
@@ -25,19 +34,17 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }} 
+          password: ${{ secrets.GITHUB_TOKEN }} # This token now inherits the 'packages: write' permission
 
       - name: Set up Docker Buildx
-        # Use the most stable version 3 for setup
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push MLOps image
-        # Use the stable version 5 for the build
         uses: docker/build-and-push-action@v5
         with:
           context: .
           push: true
-          # This syntax is now correct as your repository name is lowercase
+          # This tag assumes your repo name is 'master_trade_ai' (all lowercase)
           tags: ghcr.io/${{ github.repository }}/master-trader-airflow:latest
           file: ./Dockerfile
 
